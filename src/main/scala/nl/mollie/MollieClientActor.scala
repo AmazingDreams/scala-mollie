@@ -2,7 +2,7 @@ package nl.mollie
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.routing.RoundRobinPool
-import nl.mollie.commands.CreatePayment
+import nl.mollie.commands.{CreatePayment, CreateRefund}
 import nl.mollie.config.MollieConfig
 import nl.mollie.connection.{HttpServer, MollieConnection}
 import nl.mollie.queries.{GetPayment, ListPaymentIssuers, ListPaymentMethods}
@@ -14,6 +14,8 @@ class MollieClientActor(config: MollieConfig) extends Actor with ActorLogging {
 
   def receive: Receive = {
     case cmd: CreatePayment =>
+      commandClient forward cmd
+    case cmd: CreateRefund =>
       commandClient forward cmd
     case qry: GetPayment =>
       queryClient forward qry

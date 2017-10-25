@@ -9,10 +9,10 @@ import akka.http.scaladsl.model.{StatusCodes, _}
 import akka.stream.ActorMaterializer
 import akka.testkit.{ImplicitSender, TestKit}
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
-import nl.mollie.commands.CreatePaymentIdeal
+import nl.mollie.commands.{CreatePaymentIdeal, CreateRefund}
 import nl.mollie.config.MollieConfig
 import nl.mollie.connection.HttpServer
-import nl.mollie.responses.{MollieFailure, PaymentResponse}
+import nl.mollie.responses.{MollieFailure, PaymentResponse, RefundResponse}
 import org.json4s.native.JsonMethods._
 import org.json4s.{DefaultFormats, Formats, Serialization, jackson, _}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
@@ -112,7 +112,6 @@ class MollieCommandActorSpec(_system: ActorSystem) extends TestKit(_system) with
         )
       )
 
-
       commandActor ! CreatePaymentIdeal(
         amount = 10,
         description = "",
@@ -142,7 +141,6 @@ class MollieCommandActorSpec(_system: ActorSystem) extends TestKit(_system) with
         )
       )
 
-
       commandActor ! CreatePaymentIdeal(
         amount = 10,
         description = "",
@@ -159,6 +157,95 @@ class MollieCommandActorSpec(_system: ActorSystem) extends TestKit(_system) with
         case _: MollieFailure => true
       }
     }
-  }
 
+    "be able to create a payment refund" in {
+      val testConnection: HttpServer = new HttpServer {
+        override def sendRequest(request: HttpRequest): Future[HttpResponse] = {
+          request.entity
+            .toStrict(timeoutDuration)
+            .map(_.data)
+            .map(_.utf8String)
+            .flatMap { body =>
+              val expectedBody =
+                """
+                  {
+                    "paymentId": "tr_WDqYK6vllg",
+                    "amount": 5.95,
+                    "description": "description"
+                  }
+                """.stripMargin.replaceAll("""\s+""", "")
+
+              if (body.stripMargin.replaceAll("""\s+""", "") == expectedBody) {
+                val responseJson = parse(
+                  """{
+                        "id": "re_4qqhO89gsT",
+                        "payment": {
+                          "id": "tr_WDqYK6vllg",
+                          "mode": "test",
+                          "createdDatetime": "2017-10-24T05:04:49.0Z",
+                          "status": "refunded",
+                          "amount": 35.07,
+                          "amountRefunded": 5.95,
+                          "amountRemaining": 54.12,
+                          "description": "Order",
+                          "method": "ideal",
+                          "metadata": {
+                            "order_id": "33"
+                          },
+                          "details": {
+                            "consumerName": "Hr E G H K\u00fcppers en\/of MW M.J. K\u00fcppers-Veeneman",
+                            "consumerAccount": "NL53INGB0654422370",
+                            "consumerBic": "INGBNL2A"
+                          },
+                          "locale": "nl",
+                          "profileId": "pfl_QkEhN94Ba",
+                          "links": {
+                            "webhookUrl": "https://webshop.example.org/payments/webhook",
+                            "redirectUrl": "https://webshop.example.org/order/33/",
+                            "refunds": "https://api.mollie.nl/v1/payments/tr_WDqYK6vllg/refunds"
+                          }
+                        },
+                        "amount": 5.95,
+                        "description": "description",
+                        "refundedDatetime": "2017-10-25T10:02:54.0Z"
+                      }
+                    """
+                )
+
+                Marshal(responseJson)
+                  .to[MessageEntity]
+                  .map { entity =>
+                    HttpResponse(
+                      status = StatusCodes.Created,
+                      entity = entity
+                    )
+                  }
+              } else {
+                log.warning("body={} != expected={}", body, expectedBody)
+                Future.successful(
+                  HttpResponse(status = StatusCodes.BadRequest)
+                )
+              }
+            }
+        }
+      }
+
+      val commandActor = system.actorOf(
+        MollieCommandActor.props(
+          connection = testConnection,
+          config = config
+        )
+      )
+
+      commandActor ! CreateRefund(
+        paymentId = "tr_WDqYK6vllg",
+        amount = Some(5.95),
+        description = Some("description")
+      )
+
+      expectMsgPF(timeoutDuration) {
+        case _: RefundResponse => true
+      }
+    }
+  }
 }
