@@ -37,80 +37,87 @@ class MollieCommandActorSpec(_system: ActorSystem) extends TestKit(_system) with
   val config: MollieConfig = mollieConfig()
   val log: LoggingAdapter = _system.log
 
-  "A MollieCommandActor" must {
+  trait TestSetup {
+    lazy val expectedBody = ""
+    lazy val responseJson = parse("{}")
 
-    "be able to create an ideal payment" in {
-      val testConnection: HttpServer = new HttpServer {
-        override def sendRequest(request: HttpRequest): Future[HttpResponse] = {
-          request.entity
-            .toStrict(timeoutDuration)
-            .map(_.data)
-            .map(_.utf8String)
-            .flatMap { body =>
-              val expectedBody =
-                """
-                  |{
-                  |   "issuer": "ideal_TESTNL99",
-                  |   "amount": 10.0,
-                  |   "description": "",
-                  |   "redirectUrl": "http://redirect",
-                  |   "webhookUrl": "http://webhook",
-                  |   "locale": "nl",
-                  |   "metadata":{
-                  |     "id":"some id"
-                  |   },
-                  |   "method": "ideal"
-                  |}
-                """.stripMargin.replaceAll("""\s+""", "")
-
-              if (body.stripMargin.replaceAll("""\s+""", "") == expectedBody) {
-                val responseJson = parse(
-                  """
-                      {
-                        "id":              "tr_7UhSN1zuXS",
-                        "mode":            "test",
-                        "createdDatetime": "2016-07-28T17:11:13.0Z",
-                        "status":          "open",
-                        "expiryPeriod":    "PT15M",
-                        "amount":          10.00,
-                        "description":     "My first payment",
-                        "metadata": {
-                            "order_id": "12345"
-                        },
-                        "locale": "nl",
-                        "profileId": "pfl_QkEhN94Ba",
-                        "links": {
-                            "paymentUrl":  "https://www.mollie.com/payscreen/select-method/7UhSN1zuXS",
-                            "redirectUrl": "https://webshop.example.org/order/12345/"
-                        }
-                      }
-                    """
-                )
-
-                Marshal(responseJson)
-                  .to[MessageEntity]
-                  .map { entity =>
-                    HttpResponse(
-                      status = StatusCodes.Created,
-                      entity = entity
-                    )
-                  }
-              } else {
-                log.warning("body={} != expected={}", body, expectedBody)
-                Future.successful(
-                  HttpResponse(status = StatusCodes.BadRequest)
-                )
-              }
+    lazy val testConnection: HttpServer = new HttpServer {
+      override def sendRequest(request: HttpRequest): Future[HttpResponse] = {
+        request.entity
+          .toStrict(timeoutDuration)
+          .map(_.data)
+          .map(_.utf8String)
+          .flatMap { body =>
+            if (body.stripMargin.replaceAll("""\s+""", "") == expectedBody) {
+              Marshal(responseJson)
+                .to[MessageEntity]
+                .map { entity =>
+                  HttpResponse(
+                    status = StatusCodes.Created,
+                    entity = entity
+                  )
+                }
+            } else {
+              log.warning("body={} != expected={}", body, expectedBody)
+              Future.successful(
+                HttpResponse(status = StatusCodes.BadRequest)
+              )
             }
           }
       }
+    }
 
-      val commandActor = system.actorOf(
-        MollieCommandActor.props(
-          connection = testConnection,
-          config = config
-        )
+    lazy val commandActor = system.actorOf(
+      MollieCommandActor.props(
+        connection = testConnection,
+        config = config
       )
+    )
+  }
+
+  trait TestSetupFailRequest extends TestSetup {
+    lazy val testConnecton: HttpServer = new HttpServer {
+      override def sendRequest(request: HttpRequest): Future[HttpResponse] = Future.failed(new RuntimeException("Timeout"))
+    }
+  }
+
+  "A MollieCommandActor" must {
+
+    "be able to create an ideal payment" in new TestSetup {
+      override lazy val expectedBody = """
+        |{
+        |   "issuer": "ideal_TESTNL99",
+        |   "amount": 10.0,
+        |   "description": "",
+        |   "redirectUrl": "http://redirect",
+        |   "webhookUrl": "http://webhook",
+        |   "locale": "nl",
+        |   "metadata":{
+        |     "id":"some id"
+        |   },
+        |   "method": "ideal"
+        |}
+        """.stripMargin.replaceAll("""\s+""", "")
+
+      override lazy val responseJson = parse("""
+        {
+          "id":              "tr_7UhSN1zuXS",
+          "mode":            "test",
+          "createdDatetime": "2016-07-28T17:11:13.0Z",
+          "status":          "open",
+          "expiryPeriod":    "PT15M",
+          "amount":          10.00,
+          "description":     "My first payment",
+          "metadata": {
+            "order_id": "12345"
+          },
+          "locale": "nl",
+          "profileId": "pfl_QkEhN94Ba",
+          "links": {
+          "paymentUrl":  "https://www.mollie.com/payscreen/select-method/7UhSN1zuXS",
+          "redirectUrl": "https://webshop.example.org/order/12345/"
+          }
+        }""")
 
       commandActor ! CreatePaymentIdeal(
         amount = 10,
@@ -129,18 +136,7 @@ class MollieCommandActorSpec(_system: ActorSystem) extends TestKit(_system) with
       }
     }
 
-    "respond failure when unable to create ideal payment" in {
-      val testConnection: HttpServer = new HttpServer {
-        override def sendRequest(request: HttpRequest): Future[HttpResponse] = Future.failed(new RuntimeException("Timeout"))
-      }
-
-      val commandActor = system.actorOf(
-        MollieCommandActor.props(
-          connection = testConnection,
-          config = config
-        )
-      )
-
+    "respond failure when unable to create ideal payment" in new TestSetupFailRequest {
       commandActor ! CreatePaymentIdeal(
         amount = 10,
         description = "",
@@ -158,84 +154,47 @@ class MollieCommandActorSpec(_system: ActorSystem) extends TestKit(_system) with
       }
     }
 
-    "be able to create a payment refund" in {
-      val testConnection: HttpServer = new HttpServer {
-        override def sendRequest(request: HttpRequest): Future[HttpResponse] = {
-          request.entity
-            .toStrict(timeoutDuration)
-            .map(_.data)
-            .map(_.utf8String)
-            .flatMap { body =>
-              val expectedBody =
-                """
-                  {
-                    "paymentId": "tr_WDqYK6vllg",
-                    "amount": 5.95,
-                    "description": "description"
-                  }
-                """.stripMargin.replaceAll("""\s+""", "")
+    "be able to create a payment refund" in new TestSetup {
+      override lazy val expectedBody = """
+        |{
+        |  "paymentId": "tr_WDqYK6vllg",
+        |  "amount": 5.95,
+        |  "description": "description"
+        |}""".stripMargin.replaceAll("""\s+""", "")
 
-              if (body.stripMargin.replaceAll("""\s+""", "") == expectedBody) {
-                val responseJson = parse(
-                  """{
-                        "id": "re_4qqhO89gsT",
-                        "payment": {
-                          "id": "tr_WDqYK6vllg",
-                          "mode": "test",
-                          "createdDatetime": "2017-10-24T05:04:49.0Z",
-                          "status": "refunded",
-                          "amount": 35.07,
-                          "amountRefunded": 5.95,
-                          "amountRemaining": 54.12,
-                          "description": "Order",
-                          "method": "ideal",
-                          "metadata": {
-                            "order_id": "33"
-                          },
-                          "details": {
-                            "consumerName": "Hr E G H K\u00fcppers en\/of MW M.J. K\u00fcppers-Veeneman",
-                            "consumerAccount": "NL53INGB0654422370",
-                            "consumerBic": "INGBNL2A"
-                          },
-                          "locale": "nl",
-                          "profileId": "pfl_QkEhN94Ba",
-                          "links": {
-                            "webhookUrl": "https://webshop.example.org/payments/webhook",
-                            "redirectUrl": "https://webshop.example.org/order/33/",
-                            "refunds": "https://api.mollie.nl/v1/payments/tr_WDqYK6vllg/refunds"
-                          }
-                        },
-                        "amount": 5.95,
-                        "description": "description",
-                        "refundedDatetime": "2017-10-25T10:02:54.0Z"
-                      }
-                    """
-                )
-
-                Marshal(responseJson)
-                  .to[MessageEntity]
-                  .map { entity =>
-                    HttpResponse(
-                      status = StatusCodes.Created,
-                      entity = entity
-                    )
-                  }
-              } else {
-                log.warning("body={} != expected={}", body, expectedBody)
-                Future.successful(
-                  HttpResponse(status = StatusCodes.BadRequest)
-                )
-              }
+      override lazy val responseJson = parse("""
+        {
+          "id": "re_4qqhO89gsT",
+          "payment": {
+            "id": "tr_WDqYK6vllg",
+            "mode": "test",
+            "createdDatetime": "2017-10-24T05:04:49.0Z",
+            "status": "refunded",
+            "amount": 35.07,
+            "amountRefunded": 5.95,
+            "amountRemaining": 54.12,
+            "description": "Order",
+            "method": "ideal",
+            "metadata": {
+              "order_id": "33"
+            },
+            "details": {
+              "consumerName": "Hr E G H K\u00fcppers en\/of MW M.J. K\u00fcppers-Veeneman",
+              "consumerAccount": "NL53INGB0654422370",
+              "consumerBic": "INGBNL2A"
+            },
+            "locale": "nl",
+            "profileId": "pfl_QkEhN94Ba",
+            "links": {
+              "webhookUrl": "https://webshop.example.org/payments/webhook",
+              "redirectUrl": "https://webshop.example.org/order/33/",
+              "refunds": "https://api.mollie.nl/v1/payments/tr_WDqYK6vllg/refunds"
             }
-        }
-      }
-
-      val commandActor = system.actorOf(
-        MollieCommandActor.props(
-          connection = testConnection,
-          config = config
-        )
-      )
+          },
+          "amount": 5.95,
+          "description": "description",
+          "refundedDatetime": "2017-10-25T10:02:54.0Z"
+        }""")
 
       commandActor ! CreateRefund(
         paymentId = "tr_WDqYK6vllg",
@@ -245,6 +204,18 @@ class MollieCommandActorSpec(_system: ActorSystem) extends TestKit(_system) with
 
       expectMsgPF(timeoutDuration) {
         case _: RefundResponse => true
+      }
+    }
+
+    "respond failure when unable to create refund" in new TestSetupFailRequest {
+      commandActor ! CreateRefund(
+        paymentId = "tr_WDqYK6vllg",
+        amount = Some(5.95),
+        description = Some("description")
+      )
+
+      expectMsgPF(timeoutDuration) {
+        case _: MollieFailure => true
       }
     }
   }
