@@ -5,7 +5,7 @@ version := "0.15"
 organization := "com.github.benniekrijger"
 
 crossScalaVersions := Seq("2.11.8", "2.12.1")
-scalaVersion := crossScalaVersions.value.head
+scalaVersion := crossScalaVersions.value.last
 crossVersion := CrossVersion.binary
 
 libraryDependencies ++= Dependencies.common
