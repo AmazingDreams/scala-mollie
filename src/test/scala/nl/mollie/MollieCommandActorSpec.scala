@@ -157,7 +157,6 @@ class MollieCommandActorSpec(_system: ActorSystem) extends TestKit(_system) with
     "be able to create a payment refund" in new TestSetup {
       override lazy val expectedBody = """
         |{
-        |  "paymentId": "tr_WDqYK6vllg",
         |  "amount": 5.95,
         |  "description": "description"
         |}""".stripMargin.replaceAll("""\s+""", "")

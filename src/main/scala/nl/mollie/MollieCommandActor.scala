@@ -14,6 +14,9 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
 
 import scala.util.Success
 
+private case class CreateRefundInternal(amount: Option[Double] = None,
+                                        description: Option[String] = None)
+
 class MollieCommandActor(
     connection: HttpServer,
     config: MollieConfig
@@ -59,8 +62,12 @@ class MollieCommandActor(
 
   private def handleCreateRefund(cmd: CreateRefund) = {
     val cmdSender = sender()
+    val refundWithoutPaymentId = CreateRefundInternal(
+      amount = cmd.amount,
+      description = cmd.description
+    )
 
-    Marshal(cmd).to[RequestEntity].flatMap { requestEntity =>
+    Marshal(refundWithoutPaymentId).to[RequestEntity].flatMap { requestEntity =>
       connection.sendRequest(
         request = HttpRequest(
           uri = s"/${config.apiBasePath}/payments/${cmd.paymentId}/refunds",
