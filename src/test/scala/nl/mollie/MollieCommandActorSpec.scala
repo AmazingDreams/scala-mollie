@@ -9,7 +9,7 @@ import akka.http.scaladsl.model.{StatusCodes, _}
 import akka.stream.ActorMaterializer
 import akka.testkit.{ImplicitSender, TestKit}
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
-import nl.mollie.commands.{CreatePaymentIdeal, CreateRefund}
+import nl.mollie.commands.{CreatePaymentIdeal, CreateRefund, CreateRefundData}
 import nl.mollie.config.MollieConfig
 import nl.mollie.connection.HttpServer
 import nl.mollie.responses.{MollieFailure, PaymentResponse, RefundResponse}
@@ -163,42 +163,43 @@ class MollieCommandActorSpec(_system: ActorSystem) extends TestKit(_system) with
 
       override lazy val responseJson = parse("""
         {
-          "id": "re_4qqhO89gsT",
-          "payment": {
-            "id": "tr_WDqYK6vllg",
-            "mode": "test",
-            "createdDatetime": "2017-10-24T05:04:49.0Z",
-            "status": "refunded",
-            "amount": 35.07,
-            "amountRefunded": 5.95,
-            "amountRemaining": 54.12,
+            "id": "re_4qqhO89gsT",
+            "payment": {
+                "id": "tr_WDqYK6vllg",
+                "mode": "test",
+                "createdDatetime": "2017-10-24T05:04:49.0Z",
+                "status": "refunded",
+                "amount": "35.07",
+                "amountRefunded": "5.95",
+                "amountRemaining": "54.12",
+                "description": "Order",
+                "method": "ideal",
+                "metadata": {
+                    "order_id": "33"
+                },
+                "details": {
+                    "consumerName": "Hr E G H K\u00fcppers en\/of MW M.J. K\u00fcppers-Veeneman",
+                    "consumerAccount": "NL53INGB0654422370",
+                    "consumerBic": "INGBNL2A"
+                },
+                "locale": "nl",
+                "links": {
+                    "webhookUrl": "https://webshop.example.org/payments/webhook",
+                    "redirectUrl": "https://webshop.example.org/order/33/",
+                    "refunds": "https://api.mollie.nl/v1/payments/tr_WDqYK6vllg/refunds"
+                }
+            },
+            "amount": "5.95",
             "description": "Order",
-            "method": "ideal",
-            "metadata": {
-              "order_id": "33"
-            },
-            "details": {
-              "consumerName": "Hr E G H K\u00fcppers en\/of MW M.J. K\u00fcppers-Veeneman",
-              "consumerAccount": "NL53INGB0654422370",
-              "consumerBic": "INGBNL2A"
-            },
-            "locale": "nl",
-            "profileId": "pfl_QkEhN94Ba",
-            "links": {
-              "webhookUrl": "https://webshop.example.org/payments/webhook",
-              "redirectUrl": "https://webshop.example.org/order/33/",
-              "refunds": "https://api.mollie.nl/v1/payments/tr_WDqYK6vllg/refunds"
-            }
-          },
-          "amount": 5.95,
-          "description": "description",
-          "refundedDatetime": "2017-10-25T10:02:54.0Z"
+            "refundedDatetime": "2017-10-25T10:02:54.0Z"
         }""")
 
       commandActor ! CreateRefund(
         paymentId = "tr_WDqYK6vllg",
-        amount = Some(5.95),
-        description = Some("description")
+        data = CreateRefundData(
+          amount = Some(5.95),
+          description = Some("description")
+        )
       )
 
       expectMsgPF(timeoutDuration) {
@@ -209,8 +210,10 @@ class MollieCommandActorSpec(_system: ActorSystem) extends TestKit(_system) with
     "respond failure when unable to create refund" in new TestSetupFailRequest {
       commandActor ! CreateRefund(
         paymentId = "tr_WDqYK6vllg",
-        amount = Some(5.95),
-        description = Some("description")
+        data = CreateRefundData(
+          amount = Some(5.95),
+          description = Some("description")
+        )
       )
 
       expectMsgPF(timeoutDuration) {

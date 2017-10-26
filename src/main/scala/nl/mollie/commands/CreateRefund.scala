@@ -1,5 +1,7 @@
 package nl.mollie.commands
 
 case class CreateRefund(paymentId: String,
-                        amount: Option[Double] = None,
-                        description: Option[String] = None)
+                        data: CreateRefundData = CreateRefundData())
+
+case class CreateRefundData(amount: Option[Double] = None,
+                            description: Option[String] = None)

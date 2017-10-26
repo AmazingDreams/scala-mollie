@@ -36,7 +36,21 @@ package nl.mollie.responses
   *  }
   */
 case class RefundResponse(id: String,
-                          payment: PaymentResponse,
-                          amount: Double,
+                          payment: RefundResponsePayment,
+                          amount: String,
                           description: String,
                           refundedDatetime: String)
+
+case class RefundResponsePayment(id: String,
+                                 mode: String,
+                                 createdDatetime: String,
+                                 status: String,
+                                 amount: String,
+                                 amountRefunded: String,
+                                 amountRemaining: String,
+                                 description: String,
+                                 method: String,
+                                 metadata: Map[String, String],
+                                 details: Map[String, String],
+                                 locale: String,
+                                 links: Map[String, String])
